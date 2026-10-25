@@ -1,5 +1,0 @@
-﻿<Project>
-    <PropertyGroup>
-        <GameDir Condition="'$(GameDir)' == ''"></GameDir>
-    </PropertyGroup>
-</Project>
