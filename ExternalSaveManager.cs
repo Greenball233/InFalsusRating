@@ -113,6 +113,6 @@ public class ExternalSaveManager
 
     struct FileActions
     {
-        public required Action OnLoaded;
+        public Action OnLoaded;
     }
 }
