@@ -46,9 +46,8 @@ public static class B30CardExporter
     const int NJ_BLOCK_X    = (CARDS_ORIGIN_X - NJ_BLOCK_W) / 2;
     const int NJ_CARD_X     = NJ_BLOCK_X + NJ_RANK_COL_W + NJ_RANK_GAP;
 
-    static string Root        => Path.Combine(Paths.ConfigPath, "InFalsusRating");
-    static string CardsDir    => Path.Combine(Root, "b30_cards");
-    static string JacketDir   => Path.Combine(Root, "jacket");
+    static string CardsDir    => Path.Combine(Settings.ConfigRoot, "b30_cards");
+    static string JacketDir   => Path.Combine(Settings.ConfigRoot, "jacket");
 
     static string[] BigBgCandidates => new[]
     {

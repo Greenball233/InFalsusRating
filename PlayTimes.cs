@@ -10,8 +10,7 @@ namespace InFalsusRating;
 
 public static class PlayTimes
 {
-        public static string JsonPath => Path.Combine(
-        BepInEx.Paths.ConfigPath, "InFalsusRating", "playtimes.json");
+        public static string JsonPath => Path.Combine(Settings.ConfigRoot, "playtimes.json");
 
         const int SaveMinMs = 1500;
 

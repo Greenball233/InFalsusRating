@@ -511,8 +511,7 @@ public static partial class Win32Overlay
     const double SCALE_SETTLE_MS = 250.0;
     const int SLIDE_GAP = 40;
 
-    static readonly string SCALE_PATH = Path.Combine(
-        BepInEx.Paths.ConfigPath, "InFalsusRating", "overlay.json");
+    static readonly string SCALE_PATH = Path.Combine(Settings.ConfigRoot, "overlay.json");
     static float _scale = 1f;
     static float _scaleOverride = 0f;
     static float _pendingScale = 0f;

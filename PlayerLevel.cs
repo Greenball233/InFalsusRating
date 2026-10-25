@@ -11,8 +11,7 @@ namespace InFalsusRating;
 
 public static class PlayerLevel
 {
-        public static string JsonPath => Path.Combine(
-        BepInEx.Paths.ConfigPath, "InFalsusRating", "level.json");
+        public static string JsonPath => Path.Combine(Settings.ConfigRoot, "level.json");
 
         const int SaveMinMs = 1000;
 

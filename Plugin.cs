@@ -86,6 +86,7 @@ public class Plugin : BasePlugin
 
         TaskMarks.Load();
 
+        ExamFails.Init();
         ExamFails.Load();
         LoadPlayerName();
 
@@ -113,11 +114,11 @@ public class Plugin : BasePlugin
         Logger.LogInfo("[Plugin] Harmony patch 已挂载");
     }
 
-        public static string AssetDir => Path.Combine(Paths.ConfigPath, "InFalsusRating", "assets");
+        public static string AssetDir => Path.Combine(Settings.ConfigRoot, "assets");
 
         public static string AssetPath(string rel)
     {
-        string root = Path.Combine(Paths.ConfigPath, "InFalsusRating");
+        string root = Settings.ConfigRoot;
         string alt = Path.Combine(root, "assets", rel);
         if (File.Exists(alt) || Directory.Exists(alt)) return alt;
         return Path.Combine(root, rel);
@@ -127,7 +128,7 @@ public class Plugin : BasePlugin
     {
         try
         {
-            string configDir = Path.Combine(Paths.ConfigPath, "InFalsusRating");
+            string configDir = Settings.ConfigRoot;
             Directory.CreateDirectory(configDir);
 
             string[] sourceDirs = new[]
@@ -180,7 +181,7 @@ public class Plugin : BasePlugin
     {
         try
         {
-            string root = Path.Combine(Paths.ConfigPath, "InFalsusRating");
+            string root = Settings.ConfigRoot;
             string assets = Path.Combine(root, "assets");
 
             CleanLegacyDir(root, "GUI", Path.Combine(assets, "GUI"));
@@ -229,7 +230,7 @@ public class Plugin : BasePlugin
     {
         try
         {
-            string dir = Path.Combine(Paths.ConfigPath, "InFalsusRating");
+            string dir = Settings.ConfigRoot;
             Directory.CreateDirectory(dir);
             string file = Path.Combine(dir, "name.txt");
 
@@ -266,7 +267,7 @@ public class Plugin : BasePlugin
         if (name.Length == 0) return false;
         try
         {
-            string dir = Path.Combine(Paths.ConfigPath, "InFalsusRating");
+            string dir = Settings.ConfigRoot;
             Directory.CreateDirectory(dir);
             File.WriteAllText(Path.Combine(dir, "name.txt"), name);
             PlayerName = name;
@@ -284,7 +285,7 @@ public class Plugin : BasePlugin
     {
         try
         {
-            string dir = Path.Combine(Paths.ConfigPath, "InFalsusRating");
+            string dir = Settings.ConfigRoot;
             Directory.CreateDirectory(dir);
             string done = Path.Combine(dir, "release_cleanup.done");
             if (File.Exists(done)) return;
@@ -474,7 +475,6 @@ public class Plugin : BasePlugin
     {
         try
         {
-
             string dir = Settings.ExportRoot;
             Directory.CreateDirectory(dir);
             string path = Path.Combine(dir, "b30.png");

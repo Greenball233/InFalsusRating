@@ -123,7 +123,7 @@ public static partial class GameProbe
                 public string[] Zero = new string[0];
     }
 
-    static string BgExpFile => Path.Combine(Paths.ConfigPath, "InFalsusRating", "bg_exp.txt");
+    static string BgExpFile => Path.Combine(Settings.ConfigRoot, "bg_exp.txt");
 
         static BgRecipe BgRec()
     {

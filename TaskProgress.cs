@@ -33,9 +33,9 @@ public static class TaskProgress
 
         static Dictionary<string, string> _picks = new Dictionary<string, string>();
 
-    public static string FilePath => Path.Combine(TaskConfig.Dir, "tasks_progress.json");
+    public static string FilePath => Path.Combine(Settings.ConfigRoot, "tasks_progress.json");
 
-    public static string PicksFile => Path.Combine(TaskConfig.Dir, "tasks_picks.json");
+    public static string PicksFile => Path.Combine(Settings.ConfigRoot, "tasks_picks.json");
 
     static bool _loaded = false;
 
@@ -169,7 +169,7 @@ public static class TaskProgress
     {
         try
         {
-            Directory.CreateDirectory(TaskConfig.Dir);
+            Directory.CreateDirectory(Settings.ConfigRoot);
             var snap = _picks;
             var sb = new StringBuilder();
             sb.AppendLine("{");
@@ -337,7 +337,7 @@ public static class TaskProgress
     {
         try
         {
-            Directory.CreateDirectory(TaskConfig.Dir);
+            Directory.CreateDirectory(Settings.ConfigRoot);
             var snapshot = _recs;
             var sb = new StringBuilder();
             sb.AppendLine("{");

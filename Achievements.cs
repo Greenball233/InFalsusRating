@@ -65,9 +65,9 @@ public static class Achievements
         public string Note;
     }
 
-    public static string DefFile => Path.Combine(TaskConfig.Dir, "achievements.json");
-    public static string StateFile => Path.Combine(TaskConfig.Dir, "achievements_progress.json");
-        public static string DefExtraFile => Path.Combine(TaskConfig.Dir, "achievements_extra.json");
+    public static string DefFile => Path.Combine(Settings.ConfigRoot, "achievements.json");
+    public static string StateFile => Path.Combine(Settings.ConfigRoot, "achievements_progress.json");
+        public static string DefExtraFile => Path.Combine(Settings.ConfigRoot, "achievements_extra.json");
 
     static List<Def> _defs = new List<Def>();
     static Dictionary<string, State> _states = new Dictionary<string, State>();
@@ -124,7 +124,7 @@ public static class Achievements
                 text = SEED;
                 try
                 {
-                    Directory.CreateDirectory(TaskConfig.Dir);
+                    Directory.CreateDirectory(Settings.ConfigRoot);
                     System.IO.File.WriteAllText(path, SEED);
                     Plugin.Logger.LogInfo($"[Achieve] 生成默认成就定义：{path}");
                 }
@@ -155,7 +155,7 @@ public static class Achievements
                     etext = EXTRA_SEED;
                     try
                     {
-                        Directory.CreateDirectory(TaskConfig.Dir);
+                        Directory.CreateDirectory(Settings.ConfigRoot);
                         System.IO.File.WriteAllText(epath, EXTRA_SEED);
                         Plugin.Logger.LogInfo($"[Achieve] 生成默认成就批次（extra）：{epath}");
                     }
@@ -808,7 +808,7 @@ public static class Achievements
         }
         try
         {
-            Directory.CreateDirectory(TaskConfig.Dir);
+            Directory.CreateDirectory(Settings.ConfigRoot);
             Dictionary<string, State> snap;
             string eq;
             int sel;
@@ -895,7 +895,7 @@ public static class Achievements
             }
             sb.AppendLine("  ]");
             sb.AppendLine("}");
-            Directory.CreateDirectory(TaskConfig.Dir);
+            Directory.CreateDirectory(Settings.ConfigRoot);
             System.IO.File.WriteAllText(DefExtraFile, sb.ToString());
             Plugin.Logger.LogInfo($"[Achieve] achievements_extra.json 已保存 {all.Count} 条（其中停用 {all.Count - rows.Count} 条原样留住）→ {DefExtraFile}");
             return null;

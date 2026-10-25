@@ -1572,7 +1572,7 @@ public static partial class GameProbe
             return;
         }
 
-        string dir = Path.Combine(Paths.ConfigPath, "InFalsusRating");
+        string dir = Settings.ConfigRoot;
         string png = Path.Combine(dir, "mv_" + tag + "_整屏.png");
         bool wrote = false;
         try

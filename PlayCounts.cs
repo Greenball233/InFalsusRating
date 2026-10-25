@@ -11,8 +11,7 @@ namespace InFalsusRating;
 
 public static class PlayCounts
 {
-        public static string JsonPath => Path.Combine(
-        BepInEx.Paths.ConfigPath, "InFalsusRating", "plays.json");
+        public static string JsonPath => Path.Combine(Settings.ConfigRoot, "plays.json");
 
         const int SaveMinMs = 1500;
 

@@ -9,8 +9,7 @@ namespace InFalsusRating;
 
 public static class TaskMarks
 {
-        public static string JsonPath => Path.Combine(
-        BepInEx.Paths.ConfigPath, "InFalsusRating", "taskmarks.json");
+        public static string JsonPath => Path.Combine(Settings.ConfigRoot, "taskmarks.json");
 
         const int SaveMinMs = 1000;
 

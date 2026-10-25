@@ -9,8 +9,7 @@ namespace InFalsusRating;
 
 public static class PlayerSkin
 {
-        public static string JsonPath => Path.Combine(
-        BepInEx.Paths.ConfigPath, "InFalsusRating", "player.json");
+        public static string JsonPath => Path.Combine(Settings.ConfigRoot, "player.json");
 
         public static string Avatar = "";
 

@@ -188,7 +188,7 @@ public static class ConstTable
     {
         try
         {
-            string dir = Path.Combine(Paths.ConfigPath, "InFalsusRating");
+            string dir = Settings.ConfigRoot;
             string file = Path.Combine(dir, "const.json");
             Directory.CreateDirectory(dir);
 
@@ -243,7 +243,7 @@ public static class ConstTable
 
         try
         {
-            string dir = Path.Combine(Paths.ConfigPath, "InFalsusRating");
+            string dir = Settings.ConfigRoot;
             Directory.CreateDirectory(dir);
             string file = Path.Combine(dir, "const.json");
 
