@@ -68,6 +68,7 @@ public static class Settings
 
     public static void Init()
     {
+        ExternalSaveManager.RegisterFile(JsonPath, Load);
     }
 
     public static void Load()

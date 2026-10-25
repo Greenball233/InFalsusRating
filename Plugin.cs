@@ -78,12 +78,16 @@ public class Plugin : BasePlugin
         TaskConfig.Load();
         TaskProgress.Load();
 
+        PlayCounts.Init();
         PlayCounts.Load();
 
+        PlayerLevel.Init();
         PlayerLevel.Load();
 
+        PlayTimes.Init();
         PlayTimes.Load();
 
+        TaskMarks.Init();
         TaskMarks.Load();
 
         ExamFails.Init();
@@ -92,6 +96,7 @@ public class Plugin : BasePlugin
 
         Settings.Load();
 
+        PlayerSkin.Init();
         PlayerSkin.Load();
         Win32Overlay.PlayerPanel.Start();
 

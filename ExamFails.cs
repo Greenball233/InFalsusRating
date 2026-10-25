@@ -179,6 +179,7 @@ public static class ExamFails
 
     public static void Init()
     {
+        ExternalSaveManager.RegisterFile(JsonPath, Load);
     }
 
     public static void Load()

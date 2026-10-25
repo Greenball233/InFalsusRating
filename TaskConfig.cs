@@ -389,6 +389,7 @@ public static class TaskConfig
     {
         if (_loaded) return;
         _loaded = true;
+        ExternalSaveManager.RegisterFile(ResultFile, () => {});
         var tiers = new List<Challenge>();
         var themes = new List<Challenge>();
 
