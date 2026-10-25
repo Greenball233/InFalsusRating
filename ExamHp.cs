@@ -62,7 +62,12 @@ public static class ExamHp
     static int _diveFrames;
     static long _unknown;
 
-        static int _regenProg, _regenNeedNow;
+    static int _regenProg, _regenTierNow;
+
+    private static int RegenNeedNow(int tier, int regenNeed)
+    {
+        return regenNeed * (tier + 1);
+    }
 
     const double LOSS_PER_SEC = 3.0;
     static double _tokens = LOSS_PER_SEC;
@@ -91,7 +96,7 @@ public static class ExamHp
         Out = false;
         NoLoss = false;
         _regenProg = 0;
-        _regenNeedNow = RegenNeed;
+        _regenTierNow = 0;
         _tokens = LOSS_PER_SEC;
         _tokenAt = Environment.TickCount;
         _judgesSaid = false;
@@ -228,7 +233,7 @@ public static class ExamHp
         static void Lose(long n, int per, string what)
     {
         _regenProg = 0;
-        _regenNeedNow = Math.Max(RegenNeed, _regenNeedNow - RegenNeed);
+        _regenTierNow = Math.Max(0, _regenTierNow - 1);
         if (n <= 0 || per <= 0) return;
         if (NoLoss)
         {
@@ -254,20 +259,21 @@ public static class ExamHp
     {
         if (!Regen || w <= 0) return;
         if (_hp >= Max) { _regenProg = 0; return; }
-        if (_regenNeedNow <= 0) _regenNeedNow = 1;
+        if (_regenTierNow < 0) _regenTierNow = 0;
         _regenProg += (int)Math.Min(w, 1_000_000);
         int plus = 0, before = _hp;
-        while (_regenProg >= _regenNeedNow && _hp < Max && plus <= 999)
+        int regenNeedNow;
+        while (_regenProg >= (regenNeedNow = RegenNeedNow(_regenTierNow, RegenNeed)) && _hp < Max && plus <= 999)
         {
-            _regenProg -= _regenNeedNow;
-            _regenNeedNow += RegenNeed;
+            _regenProg -= regenNeedNow;
+            _regenTierNow += 1;
             Set(_hp + 1);
             plus++;
         }
 
         if (_hp >= Max || plus > 999) _regenProg = 0;
         if (plus > 0)
-            Plugin.Logger.LogInfo($"[Exam] 血量：攒满一管 → +{plus}（{before} → {_hp}，下一管要 {_regenNeedNow} 点）"
+            Plugin.Logger.LogInfo($"[Exam] 血量：攒满一管 → +{plus}（{before} → {_hp}，下一管要 {regenNeedNow} 点）"
                 + (_hp >= Max ? "（到上限了，多余的进度不留）" : ""));
     }
 
@@ -310,7 +316,7 @@ public static class ExamHp
         public static string Status()
         => $"血量 {_hp}（{Min} ~ {Max}，通过线 > {Pass}）"
          + $" · 近-{NearLoss} 破-{BreakLoss} "
-         + (Regen ? $"攒 {_regenProg}/{_regenNeedNow}" : "不回血")
+         + (Regen ? $"攒 {_regenProg}/{RegenNeedNow(_regenTierNow, RegenNeed)}" : "不回血")
          + $" · 判定源 {JudgeProbe.Source}"
          + (_unknown > 0 ? $" · ⚠ 不认识的判定值 {_unknown} 个" : "");
 
