@@ -34,6 +34,8 @@ public static class ExamHp
 
     public static volatile int Hp;
 
+    public static int RegenTierNow => _regenTierNow;
+
     public static volatile bool Out;
 
     public static volatile bool NoLoss;
@@ -61,23 +63,96 @@ public static class ExamHp
     static int _diveFrames;
     static long _unknown;
 
-    static int _regenProg, _regenTierNow;
+    static volatile int _regenProg, _regenTierNow;
 
     private static int RegenNeedNow(int tier, int regenNeed, int breakLoss, int nearLoss)
     {
         double rate;
         if (breakLoss > 1 || nearLoss > 1)
         {
-            const double logBase = 9;
-            const double exponent = 8;
-            const double zipRate = 0.08;
-            rate = zipRate * (Math.Pow(Math.Log(tier + Math.Exp(exponent - 1), logBase), exponent) - Math.Pow((exponent - 1) / Math.Log(logBase), exponent)) + 1;
+            rate = CalculateHp.RegenNeedNowRate(tier);
         }
         else
         {
             rate = tier + 1;
         }
-        return (int) Math.Ceiling(regenNeed * rate);
+
+        return (int)Math.Ceiling(regenNeed * rate);
+    }
+
+    private static class CalculateHp
+    {
+        private const int Exponent = 5;
+        private const double ZipRate = 2.148;
+
+        private const int N = Exponent;
+        private const int K = Exponent - 1;
+        private static readonly double InvEk = Math.Exp(-K);
+        private static readonly double[] PolyCoeffs;
+        private static readonly double Scale;
+
+        // 原始设计是f(t)=a*{[ln(t+e^K)]^N - K^N} + 1，其中K=N-1，t就是tier，+e^K和-K^N主要用处是让f(0)=0+1，同时对a额外设计，确保f(1)<=1+1
+        // 针对(ln(x + e^K))^N进行了化简：
+        // ln(x + e^K)里面提取e^K作为公因式，化简得到K + ln(1 + x*e^(-K))
+        // 于是(K + ln(1 + x*e^(-K)))^N - K^N可以看作少了一项的二项式展开，可以结合霍纳算法进行优化
+        public static double RegenNeedNowRate(int tier)
+        {
+            if (tier <= 0) return 1.0;
+            double delta = Log1P(tier * InvEk);
+            double num = EvalPoly(PolyCoeffs, delta);
+            return num * Scale + 1;
+        }
+
+        static CalculateHp()
+        {
+            System.Diagnostics.Debug.Assert(N >= 1);
+            System.Diagnostics.Debug.Assert(ZipRate > 1);
+
+            PolyCoeffs = BuildPolyCoeffs(N, K);
+            PolyCoeffs[^1] = 0; // 常数项置0
+            double delta1 = Log1P(InvEk);
+            double c3 = EvalPoly(PolyCoeffs, delta1);
+            Scale = 1.0 / c3 / ZipRate;
+        }
+
+        // 构建 (k + x) ^ n将k与二项式系数带入后的总系数数列，按x的降幂排序
+        private static double[] BuildPolyCoeffs(int n, int k)
+        {
+            var coeffs = new double[n + 1];
+
+            // 组合数递推：C(n,0)=1, C(n,i)=C(n,i-1)*(n-i+1)/i
+            double binom = 1.0;
+
+            for (int i = 0; i <= n; i++)
+            {
+                if (i > 0)
+                {
+                    binom = binom * (n - i + 1) / i;
+                }
+
+                coeffs[i] = binom * Math.Pow(k, i);
+            }
+
+            return coeffs;
+        }
+
+        // 把(k + x) ^ n的x丢进去算，注意系数数列c按x的降幂排序
+        private static double EvalPoly(ReadOnlySpan<double> c, double x)
+        {
+            double p = c[0];
+            for (var i = 1; i < c.Length; i++)
+            {
+                var t = c[i];
+                p = p * x + t;
+            }
+
+            return p;
+        }
+
+        private static double Log1P(double x)
+        {
+            return Math.Abs(x) > 1e-4 ? Math.Log(1.0 + x) : (-0.5 * x + 1.0) * x;
+        }
     }
 
     const double LOSS_PER_SEC = 3.0;
@@ -307,7 +382,8 @@ public static class ExamHp
         _regenProg += (int)Math.Min(w, 1_000_000);
         int plus = 0, before = _hp;
         int regenNeedNow;
-        while (_regenProg >= (regenNeedNow = RegenNeedNow(_regenTierNow, RegenNeed, BreakLoss, NearLoss)) && _hp < Max && plus <= 999)
+        while (_regenProg >= (regenNeedNow = RegenNeedNow(_regenTierNow, RegenNeed, BreakLoss, NearLoss)) &&
+               _hp < Max && plus <= 999)
         {
             _regenProg -= regenNeedNow;
             _regenTierNow += 1;
