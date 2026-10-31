@@ -31,7 +31,6 @@ public static class ConstTable
 
     public static string Text(double c)
     {
-        Plugin.Logger.LogInfo($"[Const] 使用格式：{ConstTableConfig.Format}");
         return c.ToString(ConstTableConfig.Format, CultureInfo.InvariantCulture);
     }
 
