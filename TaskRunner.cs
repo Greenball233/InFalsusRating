@@ -230,6 +230,7 @@ public static class TaskRunner
 
         static void NotePlayerEscape(bool restart)
     {
+        GameProbe.CleanupExamEncounter();
         _playerQuit = true;
         _playerQuitWhy = $"第 {_idx + 1} 首《{_curTitle}》玩家自己{(restart ? "重开了谱面" : "退出了谱面")}";
         Plugin.Logger.LogWarning($"[Exam] {_playerQuitWhy}（当前 dive {_lastDive}，{ExamHp.Status()}）"
@@ -324,12 +325,28 @@ public static class TaskRunner
     static readonly string[] CLICK_ORDER = { "_Hjb", "_Ijb", "_ijb", "_Gjb" };
     static readonly string[] CLICK_ALL   = { "_Gjb", "_hjb", "_Hjb", "_ijb", "_Ijb" };
 
-        static void DumpButton(object btnLike, string label)
+        internal static void DumpButton(object btnLike, string label)
     {
         object btn = RealButton(btnLike);
         if (btn == null) { Plugin.Logger.LogWarning($"[Exam] 读不到 {label}"); return; }
         foreach (var f in CLICK_ALL)
             Plugin.Logger.LogInfo($"[Exam] {label}.{f} = {FieldDesc(btn, f)}");
+    }
+
+        public static void DumpResultsButtons(object scene)
+    {
+        if (scene == null) return;
+        try
+        {
+            object retry = Prop(scene, "retryButton");
+            if (retry != null) DumpButton(retry, "resultsRetryButton");
+            else Plugin.Logger.LogInfo("[Results] 读不到 retryButton");
+
+            object quit = Prop(scene, "quitButton");
+            if (quit != null) DumpButton(quit, "resultsQuitButton");
+            else Plugin.Logger.LogInfo("[Results] 读不到 quitButton");
+        }
+        catch (Exception e) { Plugin.Logger.LogWarning("[Results] dump 按钮失败: " + e.Message); }
     }
 
         internal static object RealButton(object o)
@@ -426,6 +443,19 @@ public static class TaskRunner
             return $"{d.GetType().Name}.Invoke({sig})" + (string.IsNullOrEmpty(target) ? "" : $"  → {target}");
         }
         catch (Exception ex) { return $"(读不出来 {ex.GetType().Name})"; }
+    }
+
+    public static bool ClickResultsQuit()
+    {
+        var scene = SceneProbe.Results;
+        if (scene == null) return false;
+        object btn = Prop(scene, "quitButton");
+        if (btn == null)
+        {
+            Plugin.Logger.LogWarning("[Results] 读不到 quitButton，无法从重开改退出");
+            return false;
+        }
+        return ClickButton(btn, 0, "resultsQuitButton");
     }
 
     static void TryDismissResults()
@@ -1026,6 +1056,7 @@ public static class TaskRunner
 
     static void FinishExam()
     {
+        GameProbe.CleanupExamEncounter();
         Running = false;
         _st = St.Idle;
 
@@ -1043,6 +1074,7 @@ public static class TaskRunner
 
     static void FailPlayer(string why)
     {
+        GameProbe.CleanupExamEncounter();
         Running = false;
         _st = St.Idle;
 
@@ -1060,6 +1092,7 @@ public static class TaskRunner
         static void FailTechnical(string why)
     {
         Plugin.Logger.LogError($"[Exam] 考试中断（技术原因）：{why}");
+        GameProbe.CleanupExamEncounter();
         LastError = why;
         Running = false;
         _st = St.Idle;
@@ -1082,6 +1115,7 @@ public static class TaskRunner
         if (_st == St.Playing && SceneProbe.Game != null)
         {
             _aborted = true;
+            GameProbe.CleanupExamEncounter();
             SceneProbe.AbortChart();
             return;
         }

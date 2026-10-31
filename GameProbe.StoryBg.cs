@@ -165,9 +165,11 @@ public static partial class GameProbe
                     "# 每一行 `键=值`，`#` 开头是注释。\r\n" +
                     "#\r\n" +
                     "# restore=1   收摊时把 `GameScene._dN` **还原成游戏自己写的那份**（默认 1）\r\n" +
+                    "#             考试模式下会压到「结算界面出现」再还原，这样结算能保留 Encounter\r\n" +
+                    "#             但结算退出仍会走故事/PV（`ResultsScene._Mq` 是那时候复制的，这是有意保留的）\r\n" +
                     "#             0 = 不还原（留着我们的故事信封）—— 这是对照\r\n" +
                     "# early=1     只要 `_VD._wEA` 一被认领（不再是 `_xe`）就立刻收摊（默认 0）\r\n" +
-                    "#             0 = 照原样压到「谱面起来 + 3 秒」\r\n" +
+                    "#             0 = 照原样压到「谱面起来 + 3 秒」（非考试）/「结算界面出现」（考试）\r\n" +
                     "# hp=1        谱面里把这一局的 `canHardFailed` 按住不放（默认 1）\r\n" +
                     "#             1 = 剧情血条归零也不会强制退出（血条照掉，但不再判死）\r\n" +
                     "#             0 = 不按 —— 对照用，那时会看见「会死的故事血条」\r\n" +
@@ -357,6 +359,8 @@ public static partial class GameProbe
             return false;
         }
 
+        FeedCardsForExam(ctx, da, tag);
+
         Type tg = T("ifapp.Game.Scenes.GameScene");
         if (tg == null)
         {
@@ -405,6 +409,393 @@ public static partial class GameProbe
         if (rec.HpLock) HpLockArm();
 
         Flush();
+        return true;
+    }
+
+    static bool FeedCardsForExam(object ctx, object da, string tag)
+    {
+        try
+        {
+            Type nhT = T("_K._NH");
+            if (nhT == null)
+            {
+                W(tag + " 配卡：⛔ `_K._NH` 没加载 —— 保持 `_gKA()` 的默认卡");
+                return false;
+            }
+
+            object nh = RVA(nhT, new[] { "_CEb" }, out _, out _);
+            if (nh == null)
+            {
+                W(tag + " 配卡：⛔ `_NH._CEb` 是 null（存档还没起来？）—— 保持默认卡");
+                return false;
+            }
+
+            object invObj = CallM(nh, "_uNA", null, tag + " 配卡 · `_NH._uNA()`");
+            if (!(invObj is CardInventory inv))
+            {
+                W(tag + " 配卡：⛔ `_uNA()` 没给出 CardInventory —— 保持默认卡");
+                return false;
+            }
+
+            EncounterId enc = default(EncounterId);
+            object bo = CallM(nh, "_boA", null, tag + " 配卡 · `_NH._boA()`（当前 EncounterId）");
+            if (bo is EncounterId boEnc)
+                enc = boEnc;
+            else if (bo != null)
+            {
+                object bv = RVA(bo, new[] { "Value" }, out _, out _);
+                if (bv != null)
+                {
+                    try { enc = new EncounterId(Convert.ToInt32(bv)); }
+                    catch { }
+                }
+            }
+
+            int boVal = enc.Value;
+            EncounterId hyA = default(EncounterId);
+            object encObj = RVA(ctx, new[] { "_HYA" }, out _, out _);
+            if (encObj is EncounterId encTyped)
+                hyA = encTyped;
+            else if (encObj != null)
+            {
+                object v = RVA(encObj, new[] { "Value" }, out _, out _);
+                if (v != null)
+                {
+                    try { hyA = new EncounterId(Convert.ToInt32(v)); }
+                    catch { }
+                }
+            }
+
+            if (enc.Value <= 0)
+                enc = hyA;
+
+            W(tag + " 配卡：`_NH._boA()`=" + boVal + "  `_nG._HYA`=" + hyA.Value + "  采用=" + enc.Value);
+
+            if (enc.Value < 0)
+                enc = default(EncounterId);
+
+            if (FeedCardsViaUn(ctx, hyA, tag, "_HYA"))
+                return true;
+            if (enc.Value != hyA.Value && FeedCardsViaUn(ctx, enc, tag, "_boA"))
+                return true;
+
+            var cards = new Il2CppStructArray<CardInstance>(5);
+            var sb = new StringBuilder();
+            int missing = 0;
+            bool filled = false;
+            SavedDeck deck = default(SavedDeck);
+
+            bool savedOk = false;
+            try
+            {
+                Il2CppStructArray<SavedDeck> decks = inv.EncounterIdToSavedDeck;
+                if (decks != null)
+                {
+                    int idx = enc.Value;
+                    if (idx >= 0 && idx < decks.Length)
+                    {
+                        deck = decks[idx];
+                        savedOk = true;
+                    }
+
+                    if (!savedOk || !deck.Assigned)
+                    {
+                        int last = inv.LastUsedDeckIndex;
+                        if (last >= 0 && last < decks.Length)
+                        {
+                            deck = decks[last];
+                            savedOk = true;
+                            W(tag + " 配卡：encounter=" + idx + " 未配，回退 LastUsedDeckIndex=" + last);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                W(tag + " 配卡：⚠ 读 EncounterIdToSavedDeck 抛 " + EM(ex));
+            }
+
+            Il2CppArrayBase<CardInstance> raw = null;
+            Il2CppSystem.ReadOnlySpan<CardInstance> all = null;
+            if (savedOk)
+            {
+                try
+                {
+                    raw = inv.allCards?.RawBuffer;
+                }
+                catch (Exception ex)
+                {
+                    W(tag + " 配卡：⚠ `allCards.RawBuffer` 抛 " + EM(ex));
+                }
+
+                if (raw == null)
+                {
+                    try
+                    {
+                        all = inv.AllCards;
+                    }
+                    catch (Exception ex)
+                    {
+                        W(tag + " 配卡：⚠ `CardInventory.AllCards` 抛 " + EM(ex));
+                    }
+                }
+
+                if (raw == null && all == null)
+                {
+                    W(tag + " 配卡：库存状态 allCards=" + (inv.allCards == null ? "<null>" : "ok")
+                      + " savedDecks=" + (inv.EncounterIdToSavedDeck == null ? "<null>" : "len=" + inv.EncounterIdToSavedDeck.Length)
+                      + " lastUsed=" + inv.LastUsedDeckIndex);
+                }
+            }
+
+            if (savedOk && (raw != null || all != null))
+            {
+                try
+                {
+                    ReadOnlySpan<int> ids = MemoryMarshal.Cast<SavedDeck, int>(MemoryMarshal.CreateReadOnlySpan(ref deck, 1));
+                    var idTxt = new StringBuilder();
+                    for (int i = 0; i < 5 && i < ids.Length; i++)
+                    {
+                        if (i > 0) idTxt.Append(',');
+                        idTxt.Append(ids[i]);
+                    }
+                    W(tag + " 配卡：存档 ids=" + idTxt.ToString() + "  assigned=" + (deck.Assigned ? "1" : "0")
+                      + "  卡源=" + (raw != null ? "allCards.RawBuffer" : "AllCards"));
+
+                    int count = raw != null ? raw.Length : all.Length;
+                    for (int i = 0; i < 5; i++)
+                    {
+                        int wantId = i < ids.Length ? ids[i] : -1;
+                        CardInstance pick = CardInstance.MissingCard;
+                        bool found = false;
+
+                        for (int j = 0; j < count; j++)
+                        {
+                            CardInstance c = raw != null ? raw[j] : all[j];
+                            if (c.CardId == wantId)
+                            {
+                                pick = c;
+                                found = true;
+                                break;
+                            }
+                        }
+
+                        cards[i] = pick;
+                        if (!found) missing++;
+                        sb.Append(' ').Append(i).Append(':').Append(wantId)
+                          .Append(found ? "→" + pick.CardId : "→Missing");
+                    }
+                    filled = true;
+                }
+                catch (Exception ex)
+                {
+                    W(tag + " 配卡：⚠ 读存档卡组时抛 " + EM(ex) + " —— 改试 EncounterDetail");
+                    filled = false;
+                    missing = 0;
+                    sb.Clear();
+                }
+            }
+
+            if (filled && missing >= 5)
+            {
+                W(tag + " 配卡：存档卡组 5 张全是 MissingCard（ids=" + sb.ToString().Trim() + "）—— 改试 EncounterDetail");
+                filled = false;
+            }
+
+            if (!filled)
+            {
+                W(tag + " 配卡：存档卡组没拿到，改试 `SongSelectScene._xr`（可能是上一首的）");
+                filled = FeedCardsFromSongSelect(ctx, tag);
+            }
+
+            if (!filled)
+            {
+                filled = FeedCardsFromEncounter(da, enc, cards, sb, ref missing, tag);
+            }
+
+            if (!filled)
+            {
+                W(tag + " 配卡：⛔ 存档卡组和 EncounterDetail 都没拿到卡 —— 保持 `_gKA()` 的默认卡");
+                return false;
+            }
+
+            var span = new Il2CppSystem.ReadOnlySpan<CardInstance>(cards);
+            CallM(ctx, "_iKA", new object[] { span }, tag + " 配卡 · `_iKA(ReadOnlySpan<CardInstance>)`");
+
+            W(tag + " 配卡：encounter=" + enc.Value + "  assigned=" + (deck.Assigned ? "1" : "0")
+              + "  cards=" + sb.ToString().Trim()
+              + (missing > 0 ? "   ⚠ " + missing + " 张用了 MissingCard" : ""));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            W(tag + " 配卡：⛔ 抛 " + EM(ex) + " —— 保持默认卡");
+            return false;
+        }
+    }
+
+    static bool FeedCardsFromSongSelect(object ctx, string tag)
+    {
+        try
+        {
+            Type ss = T("ifapp.Game.Scenes.SongSelectScene");
+            if (ss == null)
+            {
+                W(tag + " 配卡：⚠ `SongSelectScene` 没加载");
+                return false;
+            }
+
+            object envelope = RVA(ss, new[] { "_xr" }, out _, out _);
+            if (envelope == null)
+            {
+                W(tag + " 配卡：⚠ `SongSelectScene._xr` 是 null（游戏还没建当前信封）");
+                return false;
+            }
+
+            string[] names = { "_jYA", "_JYA", "_kYA", "_KYA", "_lYA" };
+            var cards = new Il2CppStructArray<CardInstance>(5);
+            var sb = new StringBuilder();
+            int missingId = CardInstance.MissingCard.CardId;
+            int valid = 0;
+
+            for (int i = 0; i < 5; i++)
+            {
+                object cObj = RVA(envelope, new[] { names[i] }, out _, out _);
+                CardInstance c = cObj is CardInstance ci ? ci : CardInstance.MissingCard;
+                cards[i] = c;
+                bool ok = c.CardId != missingId;
+                if (ok) valid++;
+                sb.Append(' ').Append(i).Append(':').Append(c.CardId).Append(ok ? "" : "→Missing");
+            }
+
+            if (valid < 5)
+            {
+                W(tag + " 配卡：⚠ `SongSelectScene._xr` 里只有 " + valid + "/5 张有效：" + sb.ToString().Trim());
+                return false;
+            }
+
+            var span = new Il2CppSystem.ReadOnlySpan<CardInstance>(cards);
+            CallM(ctx, "_iKA", new object[] { span }, tag + " 配卡 · `_iKA(ReadOnlySpan<CardInstance>)`");
+            W(tag + " 配卡：卡源=SongSelectScene._xr  cards=" + sb.ToString().Trim());
+            return true;
+        }
+        catch (Exception ex)
+        {
+            W(tag + " 配卡：⚠ 读 `SongSelectScene._xr` 抛 " + EM(ex));
+            return false;
+        }
+    }
+
+    static bool FeedCardsViaUn(object ctx, EncounterId enc, string tag, string label)
+    {
+        if (enc.Value < 0) return false;
+        object scene = SceneProbe.Scene;
+        if (scene == null)
+        {
+            W(tag + " 配卡：⚠ `_UN` 跳过 —— 当前不在选曲场景");
+            return false;
+        }
+
+        try
+        {
+            MethodInfo m = null;
+            foreach (var mm in scene.GetType().GetMethods(F))
+            {
+                if (mm.Name == "_UN" && mm.GetParameters().Length == 2)
+                {
+                    m = mm;
+                    break;
+                }
+            }
+
+            if (m == null)
+            {
+                W(tag + " 配卡：⚠ 找不到 `SongSelectScene._UN`");
+                return false;
+            }
+
+            var cards = new Il2CppStructArray<CardInstance>(5);
+            var span = new Il2CppSystem.Span<CardInstance>(cards);
+            m.Invoke(scene, new object[] { span, enc });
+
+            int missingId = CardInstance.MissingCard.CardId;
+            int valid = 0;
+            var sb = new StringBuilder();
+            for (int i = 0; i < 5; i++)
+            {
+                CardInstance c = cards[i];
+                bool ok = c.CardId != missingId;
+                if (ok) valid++;
+                sb.Append(' ').Append(i).Append(':').Append(c.CardId).Append(ok ? "" : "→Missing");
+            }
+
+            if (valid < 5)
+            {
+                W(tag + " 配卡：⚠ `_UN(" + label + "=" + enc.Value + ")` 只有 " + valid + "/5 张有效：" + sb.ToString().Trim());
+                return false;
+            }
+
+            var ro = new Il2CppSystem.ReadOnlySpan<CardInstance>(cards);
+            CallM(ctx, "_iKA", new object[] { ro }, tag + " 配卡 · `_iKA` ← `_UN(" + label + ")`");
+            W(tag + " 配卡：卡源=SongSelectScene._UN(" + label + "=" + enc.Value + ") cards=" + sb.ToString().Trim());
+            return true;
+        }
+        catch (Exception e)
+        {
+            W(tag + " 配卡：⚠ `_UN(" + label + "=" + enc.Value + ")` 抛 " + EM(e));
+            return false;
+        }
+    }
+
+    static bool FeedCardsFromEncounter(object da, EncounterId enc, Il2CppStructArray<CardInstance> cards,
+        StringBuilder sb, ref int missing, string tag)
+    {
+        if (da == null)
+        {
+            W(tag + " 配卡：⚠ DataAccess 是 null，读不到 EncounterDetail");
+            return false;
+        }
+
+        object encDetails = P(da, "EncounterDetails");
+        if (encDetails == null)
+        {
+            W(tag + " 配卡：⚠ DataAccess.EncounterDetails 是 null");
+            return false;
+        }
+
+        object detail = CallM(encDetails, "_amA", new object[] { enc }, tag + " 配卡 · `EncounterDetails._amA(EncounterId)`");
+        if (detail == null)
+        {
+            W(tag + " 配卡：⚠ EncounterDetail 取不到（encounter=" + enc.Value + "）");
+            return false;
+        }
+
+        int missingId = CardInstance.MissingCard.CardId;
+        int got = 0;
+        sb.Clear();
+        missing = 0;
+
+        for (int i = 0; i < 5; i++)
+        {
+            object cObj = RVA(detail, new[] { "Card" + i }, out _, out _);
+            CardInstance c = cObj is CardInstance ci ? ci : CardInstance.MissingCard;
+            cards[i] = c;
+
+            bool ok = c.CardId != missingId;
+            if (ok) got++;
+            else missing++;
+
+            sb.Append(' ').Append(i).Append(':').Append(c.CardId)
+              .Append(ok ? "→EncounterDetail" : "→Missing");
+        }
+
+        if (got < 5)
+        {
+            W(tag + " 配卡：⚠ EncounterDetail.Card0..4 只有 " + got + "/5 张有效 —— 不喂，避免 MissingCard 把游戏打崩");
+            return false;
+        }
+
+        W(tag + " 配卡：改用 EncounterDetail.Card0..4（5 张有效）");
         return true;
     }
 
@@ -476,9 +867,10 @@ public static partial class GameProbe
         _dnHoldN = 0;
         _dnHoldClob = 0;
         _dnHoldSaid = false;
-        W(_dnHoldTag + "：★ 从现在起**每帧重写 `GameScene._dN`**，压到「谱面起来 + 3 秒」"
-                     + (fromExam ? "或考试结束" : "或 120 秒死线") + "为止。"
-                     + (fromExam ? "（考试那条的死线是 10 分钟 —— 过场能放 150 秒，120 秒会在半路放掉保压）" : ""));
+        W(_dnHoldTag + "：★ 从现在起**每帧重写 `GameScene._dN`**，"
+                     + (fromExam ? "考试模式压到「结算界面出现」或考试结束为止（保 Encounter 结算）"
+                                 : "压到「谱面起来 + 3 秒」或 120 秒死线为止。")
+                     + (fromExam ? "（考试那条的死线是 10 分钟）" : ""));
         W(_dnHoldTag + "：   压在下面这份指纹上 = " + _dnHoldKey);
         W(_dnHoldTag + "：   （游戏顶掉它的话会报出帧号；收摊那一行直接给 `_wEA` 判决）");
         Flush();
@@ -575,10 +967,54 @@ public static partial class GameProbe
         Flush();
     }
 
-    static void DnHoldTick()
+    public static void RestoreStoryEnvelopeNow()
     {
         if (_dnHold == null) return;
+        DnHoldStop("玩家退出/重开 GameScene");
+    }
+
+    public static void CleanupExamEncounter()
+    {
+        try { RestoreStoryEnvelopeNow(); }
+        catch (Exception e) { W("课题收尾：⛔ 还原 `_dN` 抛 " + EM(e)); }
+
+        try { ClearResultsEncounterCore(true); }
+        catch (Exception e) { W("课题收尾：⛔ 清 `ResultsScene._Mq` 抛 " + EM(e)); }
+    }
+
+    public static void ClearResultsEncounter()
+    {
+        if (!TaskRunner.Busy) return;
+        ClearResultsEncounterCore(false);
+    }
+
+    static void ClearResultsEncounterCore(bool force)
+    {
+        try
+        {
+            if (!force && SceneProbe.Results == null) return;
+
+            Type rs = T("ifapp.Game.Scenes.ResultsScene");
+            if (rs == null) return;
+
+            object mq = RVA(rs, new[] { "_Mq" }, out _, out _);
+            if (mq == null) return;
+
+            CallM(rs, "_Xm", null, "结算退出 · `ResultsScene._Xm()`");
+            W("结算退出：已清 `ResultsScene._Mq` —— 这次退出回普通界面，不再直接走故事/PV");
+            Flush();
+        }
+        catch (Exception e)
+        {
+            W("结算退出：⛔ 清 `ResultsScene._Mq` 抛 " + EM(e));
+        }
+    }
+
+    static void DnHoldTick()
+    {
         int now = Environment.TickCount;
+
+        if (_dnHold == null) return;
 
         if (_dnHoldFromExam && !TaskRunner.Busy)
         {
@@ -599,14 +1035,21 @@ public static partial class GameProbe
             {
                 _dnHoldGameAt = now;
                 _dnChartFrame = SceneProbe.FrameNo;
-                W(_dnHoldTag + "：★ 谱面起来了（帧 " + SceneProbe.FrameNo + "）—— `_dN` 再压 3 秒就收");
+                W(_dnHoldTag + "：★ 谱面起来了（帧 " + SceneProbe.FrameNo + "）—— "
+                  + (_dnHoldFromExam ? "考试模式：继续压到结算界面出现再还原（保 Encounter 结算）" : "`_dN` 再压 3 秒就收"));
                 Flush();
             }
-            else if (now - _dnHoldGameAt > 3000)
+            else if (!_dnHoldFromExam && now - _dnHoldGameAt > 3000)
             {
                 DnHoldStop("谱面起来 3 秒了");
                 return;
             }
+        }
+
+        if (_dnHoldFromExam && SceneProbe.Results != null)
+        {
+            DnHoldStop("结算界面出现（ResultsScene 已取走 `_dN`）");
+            return;
         }
 
         if (_dnHoldGameAt != 0 && _dnClaimFrame == 0)

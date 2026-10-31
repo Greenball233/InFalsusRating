@@ -48,6 +48,10 @@ public static partial class GameProbe
     static string _mvMusicName = "";
     static object _mvMusicGroup;
 
+    static int _mvPvSweepUntil;
+    static int _mvPvSweepNext;
+    static readonly List<string> _mvPvSweepNames = new List<string>();
+
     static void MvTick()
     {
         if (_mvKillFrames > 0)
@@ -71,6 +75,8 @@ public static partial class GameProbe
                 Flush();
             }
         }
+
+        MvPvSweepTick();
 
         MvSyncState();
 
@@ -187,6 +193,27 @@ public static partial class GameProbe
         MvState = _mvStage == 0 ? MvStateOff
             : _mvStage == 1 ? MvStateStarting
             : (_mvEnded ? MvStateEnded : MvStatePlaying);
+    }
+
+    public static void MvAbort(string why)
+    {
+        if (_mvStage == 0 && _mvMusicHandle == null && _mvVideo == null
+            && _mvCanvasGo == null && _mvAudio == null && _mvFmodBuses.Count == 0)
+            return;
+        try
+        {
+            W("MV： ⚠ " + why + " —— 场景已经切走，强制收场（音乐先停）");
+            MvStop();
+        }
+        catch (Exception e)
+        {
+            try { MvMusicHalt(); } catch { }
+            try { MvRestoreAudio(); } catch { }
+            _mvStage = 0;
+            MvSyncState();
+            W("MV： ⚠ 强制收场抛 " + EM(e));
+            Flush();
+        }
     }
 
     static int MvInt(object o, string name)
@@ -1198,7 +1225,8 @@ public static partial class GameProbe
             return;
         }
 
-        if (_mvStage == 0 && _mvVideo == null && _mvCanvasGo == null && _mvFmodBuses.Count == 0)
+        if (_mvStage == 0 && _mvVideo == null && _mvCanvasGo == null
+            && _mvMusicHandle == null && _mvFmodBuses.Count == 0)
         {
             W("MV： ⏭ 本来就没播，这一下什么都不做");
             Flush();
@@ -1206,10 +1234,23 @@ public static partial class GameProbe
         }
 
         W("MV： ================= 拆除 =================");
+        try { MvMusicHalt(); } catch (Exception e) { W("MV： ⚠ 先停音乐时抛 " + EM(e)); }
+        try { MvRestoreAudio(); } catch (Exception e) { W("MV： ⚠ 还原音量时抛 " + EM(e)); }
+
+        try
+        {
         if (_mvVideo != null)
         {
             MvCall(_mvVideo, "Stop", 0, new object[0]);
             W("MV： `VideoPlayer.Stop()` 叫了");
+        }
+
+        if (_mvAudio != null)
+        {
+            MvCall(_mvAudio, "Stop", 0, new object[0]);
+            string aw, ay;
+            SetX(_mvAudio, new[] { "clip" }, null, out aw, out ay);
+            W("MV： `AudioSource.Stop()` 叫了，clip 摘掉");
         }
 
         if (_mvCanvasGo != null && _mvRaw != null && MvNeedsBlackout())
@@ -1261,9 +1302,13 @@ public static partial class GameProbe
         bool d2 = MvDestroy(_mvGo);
         W("MV： 拆物体  播放器=" + (d2 ? "已叫 `Destroy`" : "（没有 / 没拆成）"));
 
-        MvRestoreAudio();
-        MvMusicHalt();
-        MvAudioCensus("拆除后");
+        }
+        catch (Exception e)
+        {
+            W("MV： ⚠ 拆视频 / 画布时抛 " + EM(e) + "（音乐已先停）");
+        }
+
+        try { MvAudioCensus("拆除后"); } catch { }
         _mvStage = 0;
         _mvShotN = 0;
         _mvPrevFrame = -1;
@@ -1746,6 +1791,10 @@ public static partial class GameProbe
 
     static void MvMusicPlay()
     {
+        if (_mvMusicHandle != null)
+        {
+            try { MvCgDispose(_mvMusicHandle); } catch { }
+        }
         _mvMusicHandle = null;
         _mvMusicName = "";
         _mvMusicGroup = null;
@@ -1867,36 +1916,224 @@ public static partial class GameProbe
     static void MvMusicHalt()
     {
         string nm = _mvMusicName;
+        if (string.IsNullOrEmpty(nm) && !string.IsNullOrEmpty(_mvBaseName) && _mvBaseName != "<null>")
+            nm = _mvBaseName.ToLowerInvariant() + "_bga.wav";
+
         object h = _mvMusicHandle;
         _mvMusicHandle = null;
         _mvMusicName = "";
         _mvMusicGroup = null;
-        if (h == null) return;
+
+        if (h != null)
+        {
+            try
+            {
+                if (MvCgDispose(h))
+                    W("MV： ⏹ 音乐停了并释放：「" + nm + "」（`_Cg.Dispose`，同本体 `C2DVideoPlayer._Ke` / `OnDestroy`）");
+                else
+                    W("MV： ⚠ 音乐：`Dispose` / `_ZFA` 都没成 ⇒ 「" + nm + "」可能继续放");
+            }
+            catch (Exception e)
+            {
+                W("MV： ⚠ 音乐：停「" + nm + "」时抛 " + EM(e));
+            }
+        }
+
+        try { MvMusicSweepByName(nm, h); }
+        catch (Exception e) { W("MV： ⚠ 音乐清扫时抛 " + EM(e)); }
+    }
+
+    static bool MvCgDispose(object cg)
+    {
+        if (cg == null) return false;
+
+        // _Cg+0x90（_UFA 里的 a5）：1 = 循环。_ZFA/Dispose 看到 1 时不会立刻 stop，
+        // 而是排到「这一遍放完」才停 —— 跳过 PV 后就会继续响很久。先清零走立即 stop。
+        try
+        {
+            IntPtr p = Ptr(cg);
+            if (p != IntPtr.Zero) Marshal.WriteInt32(p + 0x90, 0);
+        }
+        catch { }
+
+        try
+        {
+            MethodInfo d = cg.GetType().GetMethod("Dispose", F);
+            if (d != null)
+            {
+                d.Invoke(cg, null);
+                return true;
+            }
+        }
+        catch { }
+
         try
         {
             Type zfT = MvAudioType("_J._zf");
-            if (zfT == null)
-            {
-                W("MV： ⚠ 音乐：停「" + nm + "」时 `_J._zf` 不在场 —— 让它自己放完");
-                return;
-            }
-
+            if (zfT == null) return false;
             string wq, yq;
             object zf = RVA(zfT, new[] { "_psA" }, out wq, out yq);
-            MethodInfo q = MvPickM(zfT, "_qFA", 1, true);
-            if (q == null) q = MvPickM(zfT, "_tFA", 1, false);
-            if (q == null)
-            {
-                W("MV： ⚠ 音乐：找不到停的方法 ⇒ 「" + nm + "」自己放完");
-                return;
-            }
-
-            q.Invoke(q.IsStatic ? null : zf, MvFit(q.GetParameters(), new object[] { h }));
-            W("MV： ⏹ 音乐停了：「" + nm + "」（`" + q.Name + "`）");
+            MethodInfo z = MvPickM(zfT, "_ZFA", 1, true);
+            if (z == null || zf == null) return false;
+            z.Invoke(zf, MvFit(z.GetParameters(), new object[] { cg }));
+            return true;
         }
-        catch (Exception e)
+        catch
         {
-            W("MV： ⚠ 音乐：停「" + nm + "」时抛 " + EM(e));
+            return false;
+        }
+    }
+
+    static string MvCgName(object cg)
+    {
+        if (cg == null) return null;
+        try
+        {
+            string s = S(P(cg, "_d"));
+            if (!string.IsNullOrEmpty(s) && s != "<null>") return s;
+        }
+        catch { }
+        try
+        {
+            object v = PF(cg, "_uUA");
+            string s = S(v);
+            if (!string.IsNullOrEmpty(s) && s != "<null>") return s;
+        }
+        catch { }
+        return null;
+    }
+
+    static void MvMusicSweepByName(string nm, object skip)
+    {
+        if (string.IsNullOrEmpty(nm)) return;
+        Type zfT = MvAudioType("_J._zf");
+        if (zfT == null) return;
+        string wq, yq;
+        object zf = RVA(zfT, new[] { "_psA" }, out wq, out yq);
+        if (zf == null) return;
+
+        object list = PF(zf, "_SsA");
+        int n = Len(list);
+        if (n <= 0) return;
+
+        int killed = 0;
+        for (int i = n - 1; i >= 0; i--)
+        {
+            object cg = At(list, i);
+            if (cg == null || ReferenceEquals(cg, skip)) continue;
+            string name = MvCgName(cg);
+            if (!string.Equals(name, nm, StringComparison.OrdinalIgnoreCase)) continue;
+            if (MvCgDispose(cg)) killed++;
+        }
+
+        if (killed > 0)
+            W("MV： ⏹ 音乐清扫：按名字又停掉 " + killed + " 个「" + nm + "」残留句柄");
+    }
+
+    public static void AbortStoryPvAudio(string why, object scene)
+    {
+        if (!TaskRunner.Busy) return;
+
+        var names = new List<string>();
+        int killed = 0;
+
+        try { killed += MvStopCgField(scene, "_ST", names); } catch { }
+        try { killed += MvStopCgField(scene, "_tT", names); } catch { }
+        try { killed += MvStopVideoAudio(scene, "bossIntroBgaPlayer", names); } catch { }
+        try { killed += MvStopVideoAudio(scene, "videoPlayer", names); } catch { }
+        try { killed += MvStopVideoAudio(scene, "c2dVideoPlayer", names); } catch { }
+        try { killed += MvStopVideoAudio(scene, "introC2dVideoPlayer", names); } catch { }
+
+        try { killed += MvMusicSweepSuffix("_bga.wav"); } catch { }
+
+        _mvPvSweepNames.Clear();
+        _mvPvSweepNames.AddRange(names);
+        _mvPvSweepUntil = Environment.TickCount + 3000;
+        _mvPvSweepNext = Environment.TickCount + 250;
+
+        if (killed > 0)
+            W("PV： ⏹ " + why + " —— 已收掉 " + killed + " 个 PV 音频句柄，"
+              + "之后 3 秒继续按「_bga.wav」清扫延迟起播的");
+        else
+            W("PV： ⏳ " + why + " —— 这一刻还没抓到 PV 音频句柄，"
+              + "之后 3 秒按「_bga.wav」清扫延迟起播的");
+    }
+
+    static int MvStopCgField(object holder, string field, List<string> names)
+    {
+        object cg = PF(holder, field);
+        if (cg == null) return 0;
+
+        string nm = MvCgName(cg);
+        if (!string.IsNullOrEmpty(nm) && nm != "<null>" && !names.Contains(nm))
+            names.Add(nm);
+
+        return MvCgDispose(cg) ? 1 : 0;
+    }
+
+    static int MvStopVideoAudio(object holder, string field, List<string> names)
+    {
+        object vp = PF(holder, field);
+        if (vp == null) return 0;
+        return MvStopCgField(vp, "_QG", names);
+    }
+
+    static int MvMusicSweepSuffix(string suffix)
+    {
+        if (string.IsNullOrEmpty(suffix)) return 0;
+
+        Type zfT = MvAudioType("_J._zf");
+        if (zfT == null) return 0;
+
+        string wq, yq;
+        object zf = RVA(zfT, new[] { "_psA" }, out wq, out yq);
+        if (zf == null) return 0;
+
+        object list = PF(zf, "_SsA");
+        int n = Len(list);
+        if (n <= 0) return 0;
+
+        int killed = 0;
+        for (int i = n - 1; i >= 0; i--)
+        {
+            object cg = At(list, i);
+            if (cg == null) continue;
+
+            string name = MvCgName(cg);
+            if (string.IsNullOrEmpty(name) || name == "<null>") continue;
+            if (!name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) continue;
+
+            if (MvCgDispose(cg))
+            {
+                killed++;
+                W("PV： ⏹ 延迟清扫停掉「" + name + "」");
+            }
+        }
+
+        return killed;
+    }
+
+    static void MvPvSweepTick()
+    {
+        if (_mvPvSweepUntil == 0) return;
+
+        int now = Environment.TickCount;
+        if (now >= _mvPvSweepUntil)
+        {
+            _mvPvSweepUntil = 0;
+            _mvPvSweepNext = 0;
+            _mvPvSweepNames.Clear();
+            return;
+        }
+
+        if (now < _mvPvSweepNext) return;
+        _mvPvSweepNext = now + 250;
+
+        try { MvMusicSweepSuffix("_bga.wav"); } catch { }
+
+        for (int i = 0; i < _mvPvSweepNames.Count; i++)
+        {
+            try { MvMusicSweepByName(_mvPvSweepNames[i], null); } catch { }
         }
     }
 
